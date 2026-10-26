@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AskDocs</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --text: #1c1917; --muted: #78716c;
+    --border: #e7e5e4; --accent: #0f766e; --accent-soft: #ccfbf1; --code: #f5f5f4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09; --panel: #1c1917; --text: #f5f5f4; --muted: #a8a29e;
+      --border: #292524; --accent: #2dd4bf; --accent-soft: #134e4a; --code: #292524;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 820px; margin: 0 auto; padding: 40px 16px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0 0 24px; font-size: 14px; }
+  form { display: flex; gap: 8px; flex-wrap: wrap; }
+  input[type=text] { flex: 1 1 320px; padding: 11px 14px; border: 1px solid var(--border);
+         border-radius: 10px; background: var(--panel); color: var(--text); font: inherit; }
+  select, button { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border);
+         background: var(--panel); color: var(--text); font: inherit; }
+  button { background: var(--accent); color: var(--bg); border: none; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: wait; }
+  .examples { margin: 12px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+  .examples button { background: transparent; color: var(--muted); border: 1px solid var(--border);
+         font-weight: 400; font-size: 13px; padding: 4px 10px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+          padding: 18px 20px; margin-top: 24px; }
+  .answer { white-space: pre-wrap; }
+  .answer a.cite { color: var(--accent); text-decoration: none; font-weight: 600; font-size: 12px;
+          vertical-align: super; }
+  .meta { color: var(--muted); font-size: 12px; margin-top: 12px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 8px; }
+  .src { border-top: 1px solid var(--border); padding: 12px 0; }
+  .src:first-of-type { border-top: none; }
+  .src header { display: flex; gap: 8px; align-items: baseline; }
+  .src .n { font-weight: 700; color: var(--muted); min-width: 24px; }
+  .src.cited .n { color: var(--accent); }
+  .src a { color: var(--text); font-weight: 600; text-decoration: none; }
+  .src a:hover { text-decoration: underline; }
+  .src .score { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .src p { margin: 4px 0 0 32px; color: var(--muted); font-size: 13px; display: -webkit-box;
+           -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .err { color: #dc2626; }
+</style>
+</head>
+<body>
+<main>
+  <h1>AskDocs</h1>
+  <p class="sub">Answers from the FastAPI docs with citations. Hybrid BM25 + dense retrieval, cross-encoder reranking.</p>
+  <form id="f">
+    <input id="q" type="text" placeholder="How do I make a query parameter optional?" autocomplete="off" required>
+    <select id="mode" aria-label="Retrieval mode">
+      <option value="hybrid-rerank" selected>hybrid + rerank</option>
+      <option value="hybrid">hybrid</option>
+      <option value="dense">dense</option>
+      <option value="bm25">bm25</option>
+    </select>
+    <button id="go">Ask</button>
+  </form>
+  <div class="examples" id="examples"></div>
+  <div id="out"></div>
+</main>
+<script>
+const examples = [
+  "How do I return a custom status code?",
+  "How can I run code when the app starts up?",
+  "How do I validate a list of items in a request body?",
+];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+for (const ex of examples) {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = ex;
+  b.onclick = () => { $("q").value = ex; $("f").requestSubmit(); };
+  $("examples").append(b);
+}
+
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  $("go").disabled = true;
+  $("out").innerHTML = '<div class="card meta">Retrieving and generating…</div>';
+  try {
+    const res = await fetch("/api/ask", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question: $("q").value, mode: $("mode").value }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || res.statusText);
+    render(data);
+  } catch (err) {
+    $("out").innerHTML = `<div class="card err">${esc(String(err.message || err))}</div>`;
+  } finally {
+    $("go").disabled = false;
+  }
+});
+
+function render(d) {
+  const answer = esc(d.answer).replace(/\[(\d+)\]/g, (m, n) => `<a class="cite" href="#src-${n}">[${n}]</a>`);
+  const sources = d.sources.map((s) => `
+    <div class="src ${s.cited ? "cited" : ""}" id="src-${s.n}">
+      <header>
+        <span class="n">${s.n}</span>
+        ${s.url ? `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.section)}</a>` : `<strong>${esc(s.section)}</strong>`}
+        <span class="score">${s.score.toFixed(3)}</span>
+      </header>
+      <p>${esc(s.text)}</p>
+    </div>`).join("");
+  $("out").innerHTML = `
+    <div class="card"><div class="answer">${answer}</div>
+      <div class="meta">retrieval ${d.timings_ms.retrieval} ms · generation ${(d.timings_ms.generation / 1000).toFixed(1)} s</div></div>
+    <h2>Sources</h2><div class="card">${sources}</div>`;
+}
+</script>
+</body>
+</html>
