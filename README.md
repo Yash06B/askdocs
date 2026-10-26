@@ -27,7 +27,16 @@ What the numbers say:
 - **Hybrid beats either retriever alone** on both chunkings. BM25 catches exact identifiers (`Depends`, `response_model`); dense catches paraphrases. Reciprocal rank fusion combines them without tuning score scales.
 - **The reranker widens recall but doesn't sharpen the top result.** It lifts Recall@5 from 93.3% to 96.0% (what actually lands in the LLM's context window) and Recall@10 to 99.3%, but MRR is flat and it costs ~2 s per query on CPU. With a 3B local generator taking ~10 s per answer that is an acceptable trade, so `hybrid-rerank` is the default; for a latency-sensitive API, plain `hybrid` is the better choice.
 
-<!-- ANSWERS -->
+### End-to-end answers
+
+The first 30 questions were answered by `llama3.2:3b` using the structure-aware index (k=5) and graded by `gemma3:4b`. Full records: [`eval/results/answers.json`](eval/results/answers.json).
+
+| Retrieval | Judge: correct | Judge: faithful | Evidence in context | Answer cites the evidence chunk | Gen p50 |
+|---|---:|---:|---:|---:|---:|
+| BM25 | 96.7% | 100% | 83.3% | 40.0% | 2.3 s |
+| hybrid + rerank | 96.7% | 100% | **100%** | **60.0%** | 2.2 s |
+
+How to read this honestly: **the 4B judge saturated.** It rated almost everything correct and faithful, including BM25 answers where the evidence was never retrieved. The generator knows FastAPI from pretraining and filled the gap, and the judge didn't catch it. So the LLM-judged columns can't tell these two configurations apart. The mechanical columns can: with hybrid + rerank, the gold evidence reached the model's context every time (vs 83%), and the answer's own citations pointed at it 60% of the time (vs 40%). The fix is a stronger judge (`--judge-provider anthropic`) and a set of questions the model can't answer from memory. Both are on the list below.
 
 ## How it works
 
@@ -135,6 +144,7 @@ tests/            unit tests (no model downloads needed)
 - A hand-labeled set of real user questions, to check that the synthetic-set conclusions hold.
 - Contextual chunk enrichment (an LLM-written one-line summary per chunk) measured against the breadcrumb baseline.
 - Query rewriting for vague questions, and a "no answer" subset to measure refusal precision.
+- A stronger answer judge, plus questions about a private or post-cutoff corpus so the generator can't answer from memory.
 - Swapping in a larger reranker. `bge-reranker-base` is wired up via `--rerank-models` but was too slow on a laptop CPU for 150 queries x 30 candidates.
 
 ## License

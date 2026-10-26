@@ -74,9 +74,15 @@ def evaluate_answers(
     k: int = 5,
     log=print,
 ) -> tuple[dict, list[dict]]:
-    records: list[dict] = []
+    # Generate everything first, then judge: a local Ollama server often keeps one
+    # model in memory, and alternating generator/judge would reload it every call.
+    answers = []
     for i, item in enumerate(dataset, 1):
-        ans = answer_question(item["question"], retriever, llm, k=k, mode=mode)
+        answers.append(answer_question(item["question"], retriever, llm, k=k, mode=mode))
+        log(f"[{mode} answer {i}/{len(dataset)}]")
+
+    records: list[dict] = []
+    for i, (item, ans) in enumerate(zip(dataset, answers), 1):
         verdict = judge(judge_llm, item, ans)
         cites_evidence = any(is_relevant(ans.hits[n - 1].chunk, item) for n in ans.cited)
         records.append(
