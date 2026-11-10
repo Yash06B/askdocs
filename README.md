@@ -6,6 +6,12 @@ AskDocs indexes the [FastAPI docs](https://fastapi.tiangolo.com/) (155 pages) an
 
 The interesting part is the eval harness. Instead of assuming "hybrid search + reranking is better", it measures it on a 150-question golden set, across two chunking strategies and four retrieval modes.
 
+Part of a series: claude-overlay (local-first desktop copilot, Claude + Ollama) ·
+**this repo** (retrieval and evaluation) ·
+[triage-agent](https://github.com/Yash06B/triage-agent) (MCP agent for issue triage) ·
+[slm-finetune](https://github.com/Yash06B/slm-finetune) (QLoRA text-to-SQL, small model vs big) ·
+[llm-gateway](https://github.com/Yash06B/llm-gateway) (serving: fallback, circuit breakers, semantic cache).
+
 ## Results
 
 150 questions, 124 distinct doc pages. Full table: [`eval/results/retrieval.md`](eval/results/retrieval.md).
